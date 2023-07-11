@@ -1,0 +1,3 @@
+Cork: 53 stations
+Galway: 19 stations
+Limerick: 13 stations

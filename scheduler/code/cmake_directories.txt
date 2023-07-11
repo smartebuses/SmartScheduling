@@ -1,0 +1,26 @@
+-- architecture: x86
+-- cplex_ilog_path set down in windows
+-- Found CPLEX Studio: C:/Program Files/IBM/ILOG/CPLEX_Studio_Community1210
+-- CPLEX Studio dir: C:/Program Files/IBM/ILOG/CPLEX_Studio_Community1210
+-- CPLEX dir: C:/Program Files/IBM/ILOG/CPLEX_Studio_Community1210/cplex
+-- CPLEX include dir: C:/Program Files/IBM/ILOG/CPLEX_Studio_Community1210/cplex/include
+-- CPLEX_LIB_SUFFIXS
+-- C:/Program Files/IBM/ILOG/CPLEX_Studio_Community1210/cplex/lib/*windows_sv*
+-- Found CPLEX_LIB_SUFFIX: C:/Program Files/IBM/ILOG/CPLEX_Studio_Community1210/cplex/lib/x64_windows_msvc14
+-- CPLEX_LIB_PATH_SUFFIXES: lib/x64_windows_msvc14/stat_mda
+-- Cplex_LIB: C:/Program Files/IBM/ILOG/CPLEX_Studio_Community1210/cplex/lib/x64_windows_msvc14/stat_mda/cplex12100.lib
+-- Cplex_DLL: C:/Program Files/IBM/ILOG/CPLEX_Studio_Community1210/cplex/bin/x64_win64/cplex12100.d
+
+
+-- CONSORT INCLUDE: C:/Program Files/IBM/ILOG/CPLEX_Studio_Community1210/concert/include
+-- CONSORT LIB: C:/Program Files/IBM/ILOG/CPLEX_Studio_Community1210/concert/lib/x64_windows_msvc14/stat_mda/concert.lib
+-- ILOCPLEX INCLUDE: C:/Program Files/IBM/ILOG/CPLEX_Studio_Community1210/cplex/include
+-- ILOCPLEX LIB: C:/Program Files/IBM/ILOG/CPLEX_Studio_Community1210/cplex/lib/x64_windows_msvc14/stat_mda/ilocplex.lib
+
+
+-- System: Windows-10.0.18363
+-- Build type: Release
+-- Compiler version: 19.27.29112.0
+-- Configuring done
+-- Generating done
+-- Build files have been written to: C:/Users/Padraigh/CLionProjects/cplex_test/cmake-build-release-mvs
