@@ -1,4 +1,7 @@
 #!/bin/sh
+# Note: This file uses relative paths to data-sets used for the demonstration video. This file should not be used for your own experiments/tests.
+# Please see example_scheduler.sh for detailed comments on how to set up your own paths and information.
+
 locations=("cork" "limerick")
 locationPaths=("../../../../../data_sets/data/timetable/Cork/instances/cork-11-lines" "../../../../../data_sets/data/timetable/Limerick/instances/limerick-7-lines")
 maximumBatteryCapacities=(120)
@@ -19,7 +22,7 @@ startingCapacity=30
 folderName="results/experiment_set_1"
 warmingSolutionFile="solFileOPL"
 methods=("MPM" "SPM")
-chargeStationDistance="12km"
+chargeStationPlacement="Inf-A"
 solutionSaveFile="scheduleDetails"
 chargeRate=600
 bigM=25
@@ -36,10 +39,10 @@ discountFactor=0.01
 mkdir -p ./"${folderName}"
 printf "Minimum Capacity:${minimumBatteryCapacity}\nMinimum charge time:${minChargeTime}\nBus speed:${busSpeed}
 Timeout:${timeout}\nStatring capacity:${startingCapacity}\nwarmingSolutionFile:${warmingSolutionFile}
-Charging station distances:${chargeStationDistance}\nSolution save file:${solutionSaveFile}\nCharge rate:${chargeRate}
-Big M:${largeConstant}\nBus energy cost per km:${busEnergyCost}\nLpFile:${LPFile}\nBus data file:${busDataFile}
-station Distance file:${stationDistanceFile}\nstation data file:${stationDataFile}\nNew cew constraints:${newCEWConstraints}
-discount Factor:${discountFactor}\nNew progressive:${newProgressive}" > ${folderName}/settings.txt
+Charging station placment:${chargeStationPlacement}\nSolution save file:${solutionSaveFile}\nCharge rate:${chargeRate}
+Big M:${bigM}\nBus energy cost per km:${busEnergyCost}\nLpFile:${LPFile}\nBus data file:${busDataFile}
+station Distance file:${stationDistanceFile}\nstation data file:${stationDataFile}
+discount Factor:${discountFactor}" > ${folderName}/settings.txt
 
 for method in "${methods[@]}";
 do
@@ -75,7 +78,7 @@ do
               fi
 							if [[ "$datatype" = "noClean" ]]
 							then
-							  timeWindows="18.00-24.00=0,"
+							  CEW="18.00-24.00=0,"
                 if [[ ${date} != "${dates[0]}" ]]
                 then
                     continue
@@ -83,16 +86,16 @@ do
 
 							else
 								dataFile="../CEWs/February/${datatype}/${method}/${year}-${month}-${date}-${horizonStartTime}.txt"
-								while read timeWindows;
+								while read CEW;
 								do
-									echo "CEW: " "$timeWindows"
+									echo "CEW: " "$CEW"
 								done < "${dataFile}"
 
 							fi
 							echo "Location:" "$location"							
 							echo "Method:" "$method"
-							echo "CEW:" "$timeWindows"
-							echo "Charge station interval:" "$chargeStationDistance"
+							echo "CEW:" "$CEW"
+							echo "Charge station placement:" "$chargeStationPlacement"
 							echo "Battery capacity:" "$maxBatteryCapacity"
 							echo "Max charge time:" "$maxChargeTime"
 							echo "Min charge time:" "$minChargeTime"
@@ -104,15 +107,16 @@ do
 								
 							resultDir="${date}"_"${location}"_"${maxBatteryCapacity}"_"${deviationTime}"_"${busSpeed}"_"${horizonStartTime}"_"${powerRatio}"
 							mkdir -p ./"${folderName}"/"${location}"/"${datatype}"/"${method}"/"${resultDir}"
-							printf "Location: ${location}\nWindow: ${timeWindows}\nBattery capacity: ${maxBatteryCapacity}\nDelta time: ${deviationTime}\nBus speed: ${busSpeed}\nInterval: ${chargeStationDistance}\nTime: ${horizonStartTime}\nDate ${date}\nPower ratio ${powerRatio}\nTimeout ${timeout}\nType $datatype" > ${folderName}/"${location}"/"${datatype}"/"${method}"/"${resultDir}"/details.txt
-							cd code/release-build
+							printf "Location: ${location}\nCEW: ${CEW}\nBattery capacity: ${maxBatteryCapacity}\nDelta time: ${deviationTime}\nBus speed: ${busSpeed}\nCharging station placement: ${chargeStationPlacement}\nTime: ${horizonStartTime}\nDate ${date}\nPower ratio ${powerRatio}\nTimeout ${timeout}\nType $datatype" > ${folderName}/"${location}"/"${datatype}"/"${method}"/"${resultDir}"/details.txt
+							mkdir -p "code"/"release-build"
+       							cd code/release-build
 							cmake -DCMAKE_BUILD_TYPE=Release ..
 							cmake --build . --config Release
 							if(($t > 0))
 							then
-								./scheduler --discountFactor "${discountFactor}" --busEnergyCost "${busEnergyCost}" --chargeRate "${chargeRate}" --bigM "${bigM}" --maxSolutions $maxSolutions --LPFile $LPFile --timeout $timeout --solutionSaveFile ../../${folderName}/"${location}"/"${datatype}"/"${method}"/"${resultDir}"/${solutionSaveFile}  --maxBatteryCapacity "${maxBatteryCapacity}" --minBatteryCapacity "${minBatteryCapacity}" --deviationTime "${deviationTime}" --timeWindows "${timeWindows}" --busSpeed "$busSpeed" --busDataFile "${path}"/${busDataFile} --stationDataFile "${path}"/${stationDataFile} --stationDistanceFile "${path}"/"${stationDistanceFile}" --logFile ../../${folderName}/"${location}"/"${datatype}"/"${method}"/"${resultDir}"/"${logFile}" --horizonStartTime "${horizonStartTime}" --startingCapacity "${startingCapacity}" --chargingStationsFile ../../charging_station_locations/"${chargeStationDistance}"/"${location}""${chargingStationsFile}" --powerRatio "${powerRatio}" --maxChargeTime "${maxChargeTime}" --minChargeTime "${minChargeTime}" --location "${location}" --horizonEndTime "${horizonEndTime}" --method "${method}" --solutionDataFile ../../${folderName}/"${location}"/"${datatype}"/"${method}"/"${date}"_"${location}"_"${maxBatteryCapacity}"_"${deviationTime}"_"${busSpeed}"_"${horizonStartTimes[$t-1]}"_"${powerRatio}"/${solutionSaveFile} --recalculate "true" --warmingSolutionFile ${LPFile} > ../../${folderName}/"${location}"/"${datatype}"/"${method}"/"${resultDir}"/result.txt
+								./scheduler --discountFactor "${discountFactor}" --busEnergyCost "${busEnergyCost}" --chargeRate "${chargeRate}" --bigM "${bigM}" --maxSolutions $maxSolutions --LPFile $LPFile --timeout $timeout --solutionSaveFile ../../${folderName}/"${location}"/"${datatype}"/"${method}"/"${resultDir}"/${solutionSaveFile}  --maxBatteryCapacity "${maxBatteryCapacity}" --minBatteryCapacity "${minBatteryCapacity}" --deviationTime "${deviationTime}" --CEW "${CEW}" --busSpeed "$busSpeed" --busDataFile "${path}"/${busDataFile} --stationDataFile "${path}"/${stationDataFile} --stationDistanceFile "${path}"/"${stationDistanceFile}" --logFile ../../${folderName}/"${location}"/"${datatype}"/"${method}"/"${resultDir}"/"${logFile}" --horizonStartTime "${horizonStartTime}" --startingCapacity "${startingCapacity}" --chargingStationsFile ../../charging_station_locations/"${chargeStationPlacement}"/"${location}""${chargingStationsFile}" --powerRatio "${powerRatio}" --maxChargeTime "${maxChargeTime}" --minChargeTime "${minChargeTime}" --location "${location}" --horizonEndTime "${horizonEndTime}" --method "${method}" --solutionDataFile ../../${folderName}/"${location}"/"${datatype}"/"${method}"/"${date}"_"${location}"_"${maxBatteryCapacity}"_"${deviationTime}"_"${busSpeed}"_"${horizonStartTimes[$t-1]}"_"${powerRatio}"/${solutionSaveFile} --recalculate "true" --warmingSolutionFile ${LPFile} > ../../${folderName}/"${location}"/"${datatype}"/"${method}"/"${resultDir}"/result.txt
 							else
-							  ./scheduler --discountFactor "${discountFactor}" --busEnergyCost "${busEnergyCost}" --chargeRate "${chargeRate}" --bigM "${bigM}" --maxSolutions $maxSolutions --LPFile $LPFile --timeout $timeout --solutionSaveFile ../../${folderName}/"${location}"/"${datatype}"/"${method}"/"${resultDir}"/${solutionSaveFile}  --maxBatteryCapacity "${maxBatteryCapacity}" --minBatteryCapacity "${minBatteryCapacity}" --deviationTime "${deviationTime}" --timeWindows "${timeWindows}" --busSpeed "$busSpeed" --busDataFile "${path}"/${busDataFile} --stationDataFile "${path}"/${stationDataFile} --stationDistanceFile "${path}"/"${stationDistanceFile}" --logFile ../../${folderName}/"${location}"/"${datatype}"/"${method}"/"${resultDir}"/"${logFile}" --horizonStartTime "${horizonStartTime}" --startingCapacity "${startingCapacity}" --chargingStationsFile ../../charging_station_locations/"${chargeStationDistance}"/"${location}""${chargingStationsFile}" --powerRatio "${powerRatio}" --maxChargeTime "${maxChargeTime}" --minChargeTime "${minChargeTime}" --location "${location}" --horizonEndTime "${horizonEndTime}" --method "${method}" --warmingSolutionFile ../../warming_solutions/"${location}"/"${chargeStationDistance}"/"${method}"/"${warmingSolutionFile}" > ../../${folderName}/"${location}"/"${datatype}"/"${method}"/"${resultDir}"/result.txt
+							  ./scheduler --discountFactor "${discountFactor}" --busEnergyCost "${busEnergyCost}" --chargeRate "${chargeRate}" --bigM "${bigM}" --maxSolutions $maxSolutions --LPFile $LPFile --timeout $timeout --solutionSaveFile ../../${folderName}/"${location}"/"${datatype}"/"${method}"/"${resultDir}"/${solutionSaveFile}  --maxBatteryCapacity "${maxBatteryCapacity}" --minBatteryCapacity "${minBatteryCapacity}" --deviationTime "${deviationTime}" --CEW "${CEW}" --busSpeed "$busSpeed" --busDataFile "${path}"/${busDataFile} --stationDataFile "${path}"/${stationDataFile} --stationDistanceFile "${path}"/"${stationDistanceFile}" --logFile ../../${folderName}/"${location}"/"${datatype}"/"${method}"/"${resultDir}"/"${logFile}" --horizonStartTime "${horizonStartTime}" --startingCapacity "${startingCapacity}" --chargingStationsFile ../../charging_station_locations/"${chargeStationPlacement}"/"${location}""${chargingStationsFile}" --powerRatio "${powerRatio}" --maxChargeTime "${maxChargeTime}" --minChargeTime "${minChargeTime}" --location "${location}" --horizonEndTime "${horizonEndTime}" --method "${method}" --warmingSolutionFile ../../warming_solutions/"${location}"/"${chargeStationPlacement}"/"${method}"/"${warmingSolutionFile}" > ../../${folderName}/"${location}"/"${datatype}"/"${method}"/"${resultDir}"/result.txt
 							fi
 							cd ../..
 						done

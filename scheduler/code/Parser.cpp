@@ -1,7 +1,3 @@
-//
-// Created by padraigh on 02/03/2022.
-//
-
 #include <iostream>
 
 #include "fstream"
@@ -14,10 +10,12 @@
 
 using namespace std;
 
+/// load the names of the stops
 vector<vector<string>> Parser::parseStopsFile(string stopsFile){
     return Parser::myFileReader.readCSV(stopsFile);
 }
 
+/// load the file containing information for X_i
 vector<int> Parser::parseChargingStationsFile(string chargingStationFile){
     bool exists = Parser::myFileReader.validatePath(chargingStationFile);
     if(!exists){
@@ -28,6 +26,7 @@ vector<int> Parser::parseChargingStationsFile(string chargingStationFile){
     string line;
 
     while(getline(file, line)){
+        /// assign 1 to represent a charging station at the index position
         for(char i: line){
             if(isdigit(i)){
                 chargingStations.push_back((int)(i)-48);
@@ -38,6 +37,7 @@ vector<int> Parser::parseChargingStationsFile(string chargingStationFile){
     return chargingStations;
 }
 
+/// load the values of a previous solution in using boost libraries
 primitiveVariables Parser::parseSolutionFile(string solutionFile){
     Parser::myFileReader.validatePath(solutionFile);
     primitiveVariables loadedVars;
@@ -49,6 +49,7 @@ primitiveVariables Parser::parseSolutionFile(string solutionFile){
     return loadedVars;
 }
 
+/// parse command line arguments and parameters
 map<string, string> Parser::parseArguments(int argc, char *argv[]){
     map<string, string> parsedArguments;
     string argumentDelimiter = "--";
@@ -64,7 +65,7 @@ map<string, string> Parser::parseArguments(int argc, char *argv[]){
     return parsedArguments;
 }
 
-
+/// assigns values for D_ij
 vector<vector<double>> Parser::parseDistanceFile(string stationDistanceFile, int numStations){
     vector<vector<double>> distances(numStations, vector<double>(numStations));
 
@@ -84,18 +85,14 @@ vector<vector<double>> Parser::parseDistanceFile(string stationDistanceFile, int
 
 }
 
+/// load bus route information
 ModelParameters Parser::parseBusData(string busDataFile, ModelParameters parameters) {
     map<string, pair<int, int>> busTimeTables;
 
     json busData = Parser::myFileReader.readJson(busDataFile);
 
     for (auto &busRoute: busData) {
-        // todo maybe have a vector of forbidden lines instead of hard coding it?
-        if (busRoute.at("line") == "350-1") {
-            continue;
-        }
-
-        json routeBuses = busRoute.at("buses");
+              json routeBuses = busRoute.at("buses");
         for (auto &bus: routeBuses) {
 
             vector<int> sequence;
@@ -111,6 +108,7 @@ ModelParameters Parser::parseBusData(string busDataFile, ModelParameters paramet
                 json stop = bus.at("path")[i];
                 string time = stop.at("time");
                 double convertedTime = Parser::myUtils.convertTime(time);
+
                 if (convertedTime == 0) {
                     convertedTime = 24.0;
                 }

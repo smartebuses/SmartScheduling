@@ -1,9 +1,5 @@
-//
-// Created by padraigh on 04/03/2022.
-//
-
-#ifndef DATAAGGREGATOR_PY_DATASTRUCTURES_H
-#define DATAAGGREGATOR_PY_DATASTRUCTURES_H
+#ifndef DATASTRUCTURES_H
+#define DATASTRUCTURES_H
 
 #include "vector"
 #include "string"
@@ -69,4 +65,4 @@ namespace boost{
         }
     }
 }
-#endif //DATAAGGREGATOR_PY_DATASTRUCTURES_H
+#endif DATASTRUCTURES_H

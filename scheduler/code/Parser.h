@@ -1,8 +1,3 @@
-//
-// Created by padraigh on 02/03/2022.
-//
-
-
 #include "DataStructures.h"
 #include "FileReader.h"
 #include "Utils.h"

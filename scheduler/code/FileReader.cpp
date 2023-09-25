@@ -1,7 +1,3 @@
-//
-// Created by Padraigh on 05/01/2021.
-//
-
 #include "FileReader.h"
 #include "string"
 #include "vector"

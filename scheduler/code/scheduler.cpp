@@ -1,7 +1,3 @@
-//
-// Created by Padraigh on 23/10/2020.
-//
-
 #include <iostream>
 #include <ilcplex/ilocplex.h>
 #include <vector>
@@ -17,49 +13,69 @@ using namespace std;
 
 
 struct variables{
-    // xi boolean variable which is true if charging station is install at station i
+    /// x_i Binary variable which is 1 if charging station is install at station i
     IloIntArray chargingStation;
-    // B set of available buses
+
+    /// B set of available buses
     IloIntArray buses;
-    // rbi amount of renewable energy used by bus b at stop i
+
+    /// nc_bi amount of non-clean energy (in kWh) used by bus b at stop i
     map<int, IloNumVarArray> nonRenewable;
-    // S set of stop sequences for each bus
+
+    /// S set of stop sequences for each bus
     map<int, IloIntArray> busSequences;
-    // Tbj scheduled arrival time of bus b at stop j
+
+    /// \Tau_bi scheduled arrival time (in hour decimal) of bus b at stop j
     map<int, IloNumArray> scheduledArrival;
-    // tbj actual arrival time of bus b at stop j
+
+    /// t_bi actual arrival time (in hour decimal) of bus b at stop j
     map<int, IloNumVarArray> actualArrival;
-    // delta tbj difference between actual arrival time and original schedule time of bus b at stop j
+
+    /// delta tbi difference between actual arrival time and original schedule time of bus b at stop j
     map<int, IloNumVarArray> deviationTime;
-    // cbj amount of energy bus b has at stop j
+
+    /// c_bi amount of capacity (in kWh) bus b has at stop i
     map<int, IloNumVarArray> batteryCapacity;
-    // ebj amount of energy gained by bus b at stop j if charged for ctbj time units.
+
+    /// e_bi amount of energy gained (in kWh) by bus b at stop i
     map<int, IloNumVarArray> chargeAmount;
-    // ctbj charge time of bus b at stop j
+
+    /// ct_bi charge time (in hour decimal) of bus b at stop i
     map<int, IloNumVarArray> chargeTime;
-    // xbj boolean variable if bus b charges at stop j
+
+    /// x_bi binary variable assigned 1 if bus b charges at stop i
     map<int, IloIntVarArray> charge;
-    // Tij amount of time required for trip i to j
+
+    /// T_ij amount of time required for a trip between stations i and j
     IloArray<IloNumArray> tripTime;
-    // Gammak information about the kth clean energy window
+
+    /// \Gamma_k information about the k^th Clean Energy Window
     IloArray<IloNumArray> powerExcess;
-    // Dij amount of energy required for trip i to j
+
+    /// Dij amount of energy required for a trip between stations i and j
     IloArray<IloNumArray> tripCost;
 
-    //cekbi amount of clean energy used in CEW k by bus b at stop i
+    /// ce_kbi amount of clean energy used in CEW k by bus b at stop i
     vector<map<int, IloNumVarArray>> windowEnergyUsed;
+
+    /// ase_bi a binary variable assigned 1 if bus b arrives at stop i before the end of the current checkpoint (Omega)
     map<int, IloIntVarArray> ases;
+
+    /// r_bi the reduction in energy (in kWh) given to charges after the current checkpoint.
     map<int, IloNumVarArray> discounts;
-    // Omega time which the current horizon ends
+
+    /// \Omega the time which the current horizon/checkpoint ends
     IloNum horizonEndTime;
 
-    //wtbik amount of time bus b spends charging at stop i using clean energy from window k
+    /// wt_bik the time (in hour decimal) bus b spends charging at stop i using clean energy from CEW k
     map<int, vector<IloNumVarArray>> cleanChargeTime;
-    //ktbik boolean variable if bus b charges at stop i during CEW k
+
+    /// kt_bik binary variable assigned 1 if bus b charges at stop i during CEW k
     map<int, vector<IloIntVarArray>> cleanWindowCharge;
 
 }modelVariables;
 
+/// create the variables used for the MIP model constraints
 void createVariables(IloEnv env, ModelParameters parameters, map<string, string> arguments) {
 
     double deviationTime = stod(arguments["deviationTime"]);
@@ -69,16 +85,16 @@ void createVariables(IloEnv env, ModelParameters parameters, map<string, string>
     double minBatteryCapacity = stod(arguments["minBatteryCapacity"]);
 
     modelVariables.horizonEndTime = IloNum(stod(arguments["horizonEndTime"]));
-
     modelVariables.buses = IloIntArray (env);
-
     modelVariables.chargingStation = IloIntArray (env, parameters.numberStations);
 
+    /// assign values of X_i as CPLEX variables
     for(int i=0;i<parameters.chargingStops.size();i++){
         modelVariables.chargingStation[i] = parameters.chargingStops[i];
     }
+
+    /// not all CEW have to be considered, ones that occur before the first bus are removed.
     modelVariables.powerExcess = IloArray<IloNumArray>(env);
-    // Removing time windows before the first bus
     if (!parameters.cleanEnergyWindows.empty()) {
         for(auto& window: parameters.cleanEnergyWindows){
             bool beforeFirstBus = true;
@@ -93,85 +109,109 @@ void createVariables(IloEnv env, ModelParameters parameters, map<string, string>
             }
         }
     }
+
+    /// create variables associated with each bus
     for(int b : parameters.busKeys){
         int numStops = parameters.busSequencesRaw[b].size();
         modelVariables.buses.add(b);
         IloIntArray busBSequence = IloIntArray(env, numStops);
         IloNumArray busBTimes = IloNumArray(env, numStops);
         IloNumVarArray busBActualArrivalTimeVars(env, numStops);
-        IloNumVarArray busBDeltaTimes(env, numStops);
+        IloNumVarArray busBDeviation(env, numStops);
         IloNumVarArray busBBatteryCapacities(env, numStops);
         IloNumVarArray busBChargeTime(env, numStops);
         IloIntVarArray busBCharge(env, numStops);
         IloNumVarArray busBChargeAmount(env, numStops);
-        IloNumVarArray busBRenewable(env, numStops);
+        IloNumVarArray busBNonRenewable(env, numStops);
         IloIntVarArray busBAses(env, numStops);
         vector<IloNumVarArray> stopWindowTime(numStops);
         vector<IloIntVarArray> stopWindowCharge(numStops);
 
         IloNumVarArray discount(env, numStops);
 
-        for(int j=0; j<numStops; j++){
-            string varString = "Bus" + to_string(b) + "SequenceStop" + to_string(j);
-            busBSequence[j] = parameters.busSequencesRaw[b][j];
-            busBTimes[j] = parameters.busTimeRaw[b][j];
+        for(int i=0; i<numStops; i++){
+            string varString = "Bus" + to_string(b) + "SequenceStop" + to_string(i);
+            /// assign the ID of the ith stop of bus b
+            busBSequence[i] = parameters.busSequencesRaw[b][i];
 
-            busBActualArrivalTimeVars[j] = IloNumVar(env, 0.0, 24.00,
+            /// assign the value of \tau _bi
+            busBTimes[i] = parameters.busTimeRaw[b][i];
+
+            /// create the variable for t_bi
+            busBActualArrivalTimeVars[i] = IloNumVar(env, 0.0, 24.00,
                                                      (varString + "ArrivalTime").c_str());
-            busBDeltaTimes[j] = IloNumVar(env, 0.0, deviationTime,
-                                          (varString + "DeltaTime").c_str());
-            busBBatteryCapacities[j] = IloNumVar(env, minBatteryCapacity, maxBatteryCapacity,
-                                                 (varString + "BatteryCapacity").c_str());
 
-            busBChargeTime[j] = IloNumVar(env, 0.0, maxChargeTime, (varString + "ChargeTime").c_str());
-            busBCharge[j] = IloIntVar(env, 0, 1, (varString + "Charge").c_str());
-            busBChargeAmount[j] = IloNumVar(env, 0.0, maxChargeTime * chargeRate,
+            /// create the variable for \delta t_bi
+            busBDeviation[i] = IloNumVar(env, 0.0, deviationTime,
+                                          (varString + "DeltaTime").c_str());
+
+            /// create the variable for c_bi
+            busBBatteryCapacities[i] = IloNumVar(env, minBatteryCapacity, maxBatteryCapacity,
+                                                 (varString + "BatteryCapacity").c_str());
+            /// create the variable for ct_bi
+            busBChargeTime[i] = IloNumVar(env, 0.0, maxChargeTime, (varString + "ChargeTime").c_str());
+
+            /// create the variable for x_bi
+            busBCharge[i] = IloIntVar(env, 0, 1, (varString + "Charge").c_str());
+
+            /// create the variable for e_bi
+            busBChargeAmount[i] = IloNumVar(env, 0.0, maxChargeTime * chargeRate,
                                             (varString + "chargeAmount").c_str());
-            busBRenewable[j] = IloNumVar(env, 0.0, maxChargeTime * chargeRate,
+
+            /// create variable for nc_bi
+            busBNonRenewable[i] = IloNumVar(env, 0.0, maxChargeTime * chargeRate,
                                          (varString + "nonRenewable").c_str());
-            busBAses[j] = IloIntVar(env, 0, 1, (varString + "ase").c_str());
+
+            /// create variable for ase_bi
+            busBAses[i] = IloIntVar(env, 0, 1, (varString + "ase").c_str());
+
+            /// create variables for the individual CEW's
             IloNumVarArray cleanEnergyTime(env,  modelVariables.powerExcess.getSize());
             IloIntVarArray cleanEnergyCharge(env, modelVariables.powerExcess.getSize());
-
-            discount[j] = IloNumVar(env, 0, maxChargeTime * chargeRate, (varString+"Discount").c_str());
-
+            discount[i] = IloNumVar(env, 0, maxChargeTime * chargeRate, (varString+"Discount").c_str());
             for(int k=0;k<modelVariables.powerExcess.getSize();k++){
+                /// create variable for wt_bik
                 cleanEnergyTime[k] = IloNumVar(env, 0.0, maxChargeTime,
                                                (varString+"CleanEnergyTime"+ to_string(k)).c_str());
+
+                /// create variable for kt_bik
                 cleanEnergyCharge[k] = IloIntVar(env, 0, 1,
                                                  (varString+"CleanEnergyCharge"+ to_string(k)).c_str());
             }
-            stopWindowTime[j] = cleanEnergyTime;
-            stopWindowCharge[j] = cleanEnergyCharge;
+            stopWindowTime[i] = cleanEnergyTime;
+            stopWindowCharge[i] = cleanEnergyCharge;
         }
         modelVariables.busSequences[b] = busBSequence;
         modelVariables.scheduledArrival[b] = busBTimes;
         modelVariables.actualArrival[b] = busBActualArrivalTimeVars;
-        modelVariables.deviationTime[b] = busBDeltaTimes;
+        modelVariables.deviationTime[b] = busBDeviation;
         modelVariables.batteryCapacity[b] = busBBatteryCapacities;
         modelVariables.chargeAmount[b] = busBChargeAmount;
         modelVariables.chargeTime[b] = busBChargeTime;
         modelVariables.charge[b] = busBCharge;
-        modelVariables.nonRenewable[b] = busBRenewable;
+        modelVariables.nonRenewable[b] = busBNonRenewable;
         modelVariables.ases[b] = busBAses;
         modelVariables.cleanChargeTime[b] = stopWindowTime;
         modelVariables.cleanWindowCharge[b] = stopWindowCharge;
 
         modelVariables.discounts[b] = discount;
     }
+    /// assign D_ij
     modelVariables.tripCost = IloArray<IloNumArray>(env, parameters.numberStations);
+
+    /// assign T_ij
     modelVariables.tripTime = IloArray<IloNumArray> (env, parameters.numberStations);
 
-    cout << "Charging stations:" << modelVariables.chargingStation << endl;
-    cout << "Total charging stations: " << IloSum(modelVariables.chargingStation) << endl;
     for (int i = 0; i < parameters.numberStations; i++) {
         IloNumArray ijCost = IloNumArray(env, parameters.numberStations);
         IloNumArray ijTime = IloNumArray(env, parameters.numberStations);
         for (int j = 0; j < parameters.numberStations; j++) {
             double cost = parameters.distances[i][j] * stod(arguments["busEnergyCost"]);
-
+            /// D_ij is the distance between two stops multiplied by the energy consumption per km
             ijCost[j]=cost;
             ijCost[j] = parameters.distances[i][j] * stod(arguments["busEnergyCost"]);
+
+            /// T_ij is the distance / (time * speed) formula using the distance between ij and the bus speed.
             ijTime[j] = ((60 / stod(arguments["busSpeed"])) * parameters.distances[i][j]) / 60;
 
         }
@@ -179,6 +219,7 @@ void createVariables(IloEnv env, ModelParameters parameters, map<string, string>
         modelVariables.tripTime[i] = ijTime;
     }
 
+    /// assign the values for \Gamma_k
     for(int k=0;k<modelVariables.powerExcess.getSize();k++){
         map<int, IloNumVarArray> stopWindowEnergy;
 
@@ -188,6 +229,7 @@ void createVariables(IloEnv env, ModelParameters parameters, map<string, string>
             IloNumVarArray windowEnergy(env, numStops);
             for(int j=0;j<numStops;j++){
 
+                /// assign the variable to determine how much energy was used for each CEW.
                 windowEnergy[j] = IloNumVar(env, 0.0, maxChargeTime * chargeRate,
                                             ("window"+to_string(modelVariables.powerExcess[k][0])+
                                             "to"+to_string(modelVariables.powerExcess[k][1])+"bus"+to_string(b)
@@ -198,30 +240,32 @@ void createVariables(IloEnv env, ModelParameters parameters, map<string, string>
 
         modelVariables.windowEnergyUsed.push_back(stopWindowEnergy);
     }
-    cout << "Targeted Time windows: " << modelVariables.powerExcess << endl;
+    cout << "Clean Energy Windows: " << modelVariables.powerExcess << endl;
 
 
 }
 
-
+/// create the constraints for the CEW's
 IloModel addCEWConstraints(IloModel model, IloEnv env, map<string, string> arguments, int b, int index,
                            IloIntArray busSequence, string varString){
 
-    double minChargeTime = stod(arguments["minChargeTime"]);
     double maxChargeTime = stod(arguments["maxChargeTime"]);
     double chargeRate = stod(arguments["chargeRate"]);
     int bigM = stoi(arguments["bigM"]);
-    double maxBatteryCapacity = stod(arguments["maxBatteryCapacity"]);
-    double minBatteryCapacity = stod(arguments["minBatteryCapacity"]);
     double deviationTime = stod(arguments["deviationTime"]);
     string method = arguments["method"];
 
     if(method == "SPM"){
-
+        /// Constraint 2.1 WP5-D2
         model.add(modelVariables.actualArrival[b][index] + (bigM * modelVariables.ases[b][index]) >= modelVariables.horizonEndTime );
+
+        /// Constraint 2.2 WP5-D2
         model.add(modelVariables.discounts[b][index] <= modelVariables.chargeAmount[b][index] * stod(arguments["discountFactor"]));
+
+        /// Constraint 2.3 WP5-D2
         model.add(modelVariables.discounts[b][index] <= bigM * (1 - modelVariables.ases[b][index]));
     }
+
     if (modelVariables.chargingStation[busSequence[index]] == 1 && modelVariables.powerExcess.getSize() >= 1) {
         IloNumVarArray windowTimeValues(env);
         IloNumVarArray previousK(env);
@@ -235,57 +279,76 @@ IloModel addCEWConstraints(IloModel model, IloEnv env, map<string, string> argum
                 windowTimeValues.add(modelVariables.windowEnergyUsed[k][b][index]);
                 continue;
             }
+            /// Constraint 3.16 WP5-D1
+            model.add(modelVariables.actualArrival[b][index] + modelVariables.chargeTime[b][index] +
+                      (bigM * (1 - modelVariables.cleanWindowCharge[b][index][k])) >= modelVariables.powerExcess[k][0]);
 
-            model.add(modelVariables.charge[b][index] >= modelVariables.cleanWindowCharge[b][index][k]);
+            /// Constraint 3.17 WP5-D1
+            model.add(modelVariables.actualArrival[b][index] -
+                      (bigM * (1-modelVariables.cleanWindowCharge[b][index][k])) <= modelVariables.powerExcess[k][1]);
 
+            /// Constraint 3.18 WP5-D1
             model.add(modelVariables.cleanWindowCharge[b][index][k] >= modelVariables.cleanChargeTime[b][index][k]);
+
+            /// Constraint 3.19 WP5-D1
             model.add(modelVariables.cleanWindowCharge[b][index][k]*chargeRate >= modelVariables.windowEnergyUsed[k][b][index]);
 
-            model.add(modelVariables.actualArrival[b][index] + modelVariables.chargeTime[b][index] +
-                          (bigM * (1 - modelVariables.cleanWindowCharge[b][index][k])) >= modelVariables.powerExcess[k][0]);
+            /// Constraint 3.20 WP5-D1
+            model.add(modelVariables.charge[b][index] >= modelVariables.cleanWindowCharge[b][index][k]);
 
-            model.add(modelVariables.actualArrival[b][index] -
-                          (bigM * (1-modelVariables.cleanWindowCharge[b][index][k])) <= modelVariables.powerExcess[k][1]);
-
-            model.add(modelVariables.cleanWindowCharge[b][index][k] >= modelVariables.cleanChargeTime[b][index][k]);
+            /// Constraint 3.21 WP5-D1
             if(previousK.getSize() == 0){
                 model.add(modelVariables.powerExcess[k][1] - modelVariables.actualArrival[b][index] +
-                              (bigM * (1 - modelVariables.cleanWindowCharge[b][index][k])) >=
-                              modelVariables.cleanChargeTime[b][index][k]);
+                          (bigM * (1 - modelVariables.cleanWindowCharge[b][index][k])) >=
+                          modelVariables.cleanChargeTime[b][index][k]);
             }
             else{
                 model.add(modelVariables.powerExcess[k][1] - modelVariables.actualArrival[b][index] -
-                              IloSum(previousK) + (bigM * (1 - modelVariables.cleanWindowCharge[b][index][k])) >=
-                              modelVariables.cleanChargeTime[b][index][k]);
+                          IloSum(previousK) + (bigM * (1 - modelVariables.cleanWindowCharge[b][index][k])) >=
+                          modelVariables.cleanChargeTime[b][index][k]);
             }
             previousK.add(modelVariables.cleanChargeTime[b][index][k]);
 
+            /// Constraint 3.22 WP5-D1
             model.add(modelVariables.actualArrival[b][index] + modelVariables.chargeTime[b][index] -
-                          modelVariables.powerExcess[k][0] + (bigM * (1-modelVariables.cleanWindowCharge[b][index][k])) >=
-                          modelVariables.cleanChargeTime[b][index][k]);
+                      modelVariables.powerExcess[k][0] + (bigM * (1-modelVariables.cleanWindowCharge[b][index][k])) >=
+                      modelVariables.cleanChargeTime[b][index][k]);
+
+            /// Constraint 3.23 WP5-D1
             model.add(modelVariables.windowEnergyUsed[k][b][index] <= modelVariables.cleanChargeTime[b][index][k]
                                                                       * chargeRate);
+
             windowTimeValues.add(modelVariables.windowEnergyUsed[k][b][index]);
 
         }
-        model.add(IloSum(windowTimeValues) <= modelVariables.chargeAmount[b][index]);
+
+        /// Constraint 3.24 WP5-D1
         model.add(IloSum(modelVariables.cleanChargeTime[b][index]) <= modelVariables.chargeTime[b][index]);
 
+        /// Setting the upper bounds for the amount of energy charged during CEWs
+        model.add(IloSum(windowTimeValues) <= modelVariables.chargeAmount[b][index]);
+
+
         if(method == "SPM"){
+            /// Constraint 2.4 of WP5-D2
             model.add(modelVariables.nonRenewable[b][index] >= modelVariables.chargeAmount[b][index] - IloSum(windowTimeValues) - modelVariables.discounts[b][index]);
         }
         else{
+            /// Constraint 3.25 WP5-D1
             model.add(modelVariables.nonRenewable[b][index] >= modelVariables.chargeAmount[b][index] - IloSum(windowTimeValues));
         }
 
     }
     else{
         if(method == "SPM"){
+            /// Set the lower bound for non-clean energy if there is no charging station/CEW
             model.add(modelVariables.nonRenewable[b][index] >= modelVariables.chargeAmount[b][index] - modelVariables.discounts[b][index]);
         }
         else{
+            /// Constraint 3.26 WP5-D1
             model.add(modelVariables.nonRenewable[b][index] >= modelVariables.chargeAmount[b][index]);
         }
+
         for(int k = 0; k < modelVariables.powerExcess.getSize(); k++) {
             model.add(modelVariables.windowEnergyUsed[k][b][index] + modelVariables.cleanChargeTime[b][index][k] +
                           modelVariables.cleanWindowCharge[b][index][k] <= 0.0);
@@ -294,61 +357,82 @@ IloModel addCEWConstraints(IloModel model, IloEnv env, map<string, string> argum
     return model;
 }
 
-
+/// create the constraints for the MIP model
 IloModel addConstraints(IloModel model, IloEnv env, ModelParameters parameters, map<string, string> arguments) {
+    double minChargeTime = stod(arguments["minChargeTime"]);
+    double maxChargeTime = stod(arguments["maxChargeTime"]);
+    double chargeRate = stod(arguments["chargeRate"]);
+    double startingCapacity = stod(arguments["startingCapacity"]);
+    int bigM = stoi(arguments["bigM"]);
+    double maxBatteryCapacity = stod(arguments["maxBatteryCapacity"]);
+    double minBatteryCapacity = stod(arguments["minBatteryCapacity"]);
+    double deviationTime = stod(arguments["deviationTime"]);
+
     for (int busIndex=0;busIndex<modelVariables.buses.getSize();busIndex++ ) {
         int b = modelVariables.buses[busIndex];
         vector<int> busRests = parameters.rests[b];
         IloIntArray busSequence = modelVariables.busSequences[b];
         double minEnergyNeeded = 0.0;
-        double minChargeTime = stod(arguments["minChargeTime"]);
-        double maxChargeTime = stod(arguments["maxChargeTime"]);
-        double chargeRate = stod(arguments["chargeRate"]);
-        double startingCapacity = stod(arguments["startingCapacity"]);
-        int bigM = stoi(arguments["bigM"]);
-        double maxBatteryCapacity = stod(arguments["maxBatteryCapacity"]);
-        double minBatteryCapacity = stod(arguments["minBatteryCapacity"]);
-        double deviationTime = stod(arguments["deviationTime"]);
-        string method = arguments["method"];
 
-        model.add(modelVariables.deviationTime[b][0] <= 0.0);
-        model.add(modelVariables.charge[b][0] >= modelVariables.chargeTime[b][0]);
-
-        model.add(modelVariables.chargeTime[b][0] >= modelVariables.charge[b][0] * minChargeTime);
-        model.add(modelVariables.chargeTime[b][0] <= modelVariables.charge[b][0] * maxChargeTime);
-
-        model.add(modelVariables.nonRenewable[b][0] <= modelVariables.chargeAmount[b][0]);
-        model.add(modelVariables.chargeAmount[b][0] <= modelVariables.chargeTime[b][0] * chargeRate);
-        model.add(modelVariables.actualArrival[b][0] == modelVariables.scheduledArrival[b][0]);
+        /// create the constraints for the first stop of b
+        /// Constraint 3.1  WP5-D1 For first stop the capacity must be equal to the starting capacity. Thus it cannot be below the minimum battery capacity
+        model.add(modelVariables.batteryCapacity[b][0] + modelVariables.chargeAmount[b][0] <= maxBatteryCapacity);
         model.add(modelVariables.batteryCapacity[b][0] == startingCapacity);
 
+        /// Constraint 3.2 WP5-D1
+        model.add(modelVariables.chargeTime[b][0] <= modelVariables.charge[b][0] * maxChargeTime);
+
+        /// Constraint 3.3 WP5-D1
         model.add(modelVariables.chargingStation[busSequence[0]] >= modelVariables.charge[b][0]);
 
-        model.add(modelVariables.batteryCapacity[b][0] + modelVariables.chargeAmount[b][0] <= maxBatteryCapacity);
+        /// Constraint 3.4 WP5-D1
+        model.add(modelVariables.chargeAmount[b][0] <= modelVariables.chargeTime[b][0] * chargeRate);
+
+        /// Constraint 3.5 WP5-D1
+        model.add(modelVariables.chargeTime[b][0] >= modelVariables.charge[b][0] * minChargeTime);
+
+        /// Constraint 3.8/3.9 WP5-D1 For the first stop it is assumed that there is no deviation from the original schedule
+        model.add(modelVariables.deviationTime[b][0] <= 0.0);
+        model.add(modelVariables.actualArrival[b][0] == modelVariables.scheduledArrival[b][0]);
+
+        /// Constraint 3.26 WP5-D1
+        model.add(modelVariables.nonRenewable[b][0] <= modelVariables.chargeAmount[b][0]);
 
 
+        /// Add the CEW constraints for the first stop
         model = addCEWConstraints(model, env, arguments, b, 0, busSequence, "Bus" + to_string(b) + "Station" + to_string(0));
+
+        /// create constraints for the rest of the bus stops.
         for (int i = 1; i < busSequence.getSize(); i++) {
             int j = i - 1;
+
             minEnergyNeeded += modelVariables.tripCost[busSequence[i]][busSequence[j]];
-            // constraint 1
+
+            /// Constraint 3.1 WP5-D1
             model.add(modelVariables.batteryCapacity[b][i] >= minBatteryCapacity);
             model.add(modelVariables.batteryCapacity[b][i] + modelVariables.chargeAmount[b][i] <= maxBatteryCapacity);
 
-            // constraint 2
+            /// Constraint 3.2 WP5-D1
+            model.add(maxChargeTime * modelVariables.charge[b][i] >= modelVariables.chargeTime[b][i]);
+
+            /// Constraint 3.3 WP5-D1
+            model.add(modelVariables.chargingStation[busSequence[i]] >= modelVariables.charge[b][i]);
+
+            /// Constraint 3.4 WP5-D1
+            model.add(modelVariables.chargeAmount[b][i] <= modelVariables.chargeTime[b][i] * chargeRate);
+
+            /// Constraint 3.5 WP5-D1
+            model.add(modelVariables.chargeTime[b][i] >= modelVariables.charge[b][i] * minChargeTime);
+
+            /// Constraint 3.6 WP5-D1
             model.add(modelVariables.batteryCapacity[b][i] <=
                           modelVariables.batteryCapacity[b][j] + modelVariables.chargeAmount[b][j] - modelVariables.tripCost[busSequence[i]][busSequence[j]]);
 
-
-            model.add(modelVariables.chargeAmount[b][i] <= modelVariables.chargeTime[b][i] * chargeRate);
-
-//             constraint 3
-            if(busRests[j] == 1 && busSequence[i] == busSequence[j]){
-                model.add(modelVariables.deviationTime[b][i] <= 0.0);
-            }
-
+            /// Constraint 3.7 WP5-D1
+            /// in some cases the bus schedule expects buses to travel at extremely high speeds to reach the next stop when adhering to the original schedule (i.e., traveling at 77 km/h).
+            /// it is assumed there is some issue with this, as a result it is assumed the travel time from ij in this situation is the difference between the scheduled times.
             if((modelVariables.scheduledArrival[b][i] - modelVariables.scheduledArrival[b][j]) <
-            modelVariables.tripTime[busSequence[i]][busSequence[j]]){
+               modelVariables.tripTime[busSequence[i]][busSequence[j]]){
                 model.add(modelVariables.actualArrival[b][i] >=
                           modelVariables.actualArrival[b][j] + modelVariables.chargeTime[b][j] + (modelVariables.scheduledArrival[b][i] - modelVariables.scheduledArrival[b][j]));
             }
@@ -358,26 +442,29 @@ IloModel addConstraints(IloModel model, IloEnv env, ModelParameters parameters, 
                           modelVariables.tripTime[busSequence[i]][busSequence[j]]);
             }
 
-            // constraint 4
+            /// If a driver rest is required then we enforce that there must be no deviation in arrival time for the following stop
+            if(busRests[j] == 1 && busSequence[i] == busSequence[j]){
+                model.add(modelVariables.deviationTime[b][i] <= 0.0);
+            }
+
+            /// Constraint 3.8 WP5-D1
             model.add(modelVariables.deviationTime[b][i] >= modelVariables.actualArrival[b][i] - modelVariables.scheduledArrival[b][i]);
-            // constraint 5
+            /// Constraint 3.9 WP5-D1
             model.add(modelVariables.deviationTime[b][i] >= modelVariables.scheduledArrival[b][i] - modelVariables.actualArrival[b][i]);
-            // constraint 6
-            model.add(maxChargeTime * modelVariables.charge[b][i] >= modelVariables.chargeTime[b][i]);
-            // constraint 7
-            model.add(modelVariables.chargingStation[busSequence[i]] >= modelVariables.charge[b][i]);
 
-            model.add(modelVariables.chargeTime[b][i] >= modelVariables.charge[b][i] * minChargeTime);
-
+            /// Constraint 3.26 WP5-D1
             model.add(modelVariables.nonRenewable[b][i] <= modelVariables.chargeAmount[b][i]);
 
             string varString = "Bus" + to_string(b) + "Station" + to_string(i);
+
+            /// Add the CEW constraints for the current stop
             model = addCEWConstraints(model, env, arguments, b, i, busSequence,
                                        "Bus" + to_string(b) + "Station" + to_string(i));
 
 
 
         }
+        /// add the non-overlapping constraints
         if (busIndex != modelVariables.buses.getSize() - 1) {
             for (int busIndexD = busIndex + 1; busIndexD < modelVariables.buses.getSize(); busIndexD++) {
                 int d = modelVariables.buses[busIndexD];
@@ -389,31 +476,40 @@ IloModel addConstraints(IloModel model, IloEnv env, ModelParameters parameters, 
                         modelVariables.scheduledArrival[d][j]) <= (maxChargeTime + deviationTime) * 2) {
                             string varName = "busb" +  to_string(b)+"busd"+ to_string(d) +"stopi"+to_string(i)+"stopj"+to_string(j);
                             IloIntVar sameStop(env, 0, 1, (varName + "samestop").c_str());
-                            // constraint 8
+
+                            /// Constraint 3.10 WP5-D1
                             model.add(sameStop <= modelVariables.charge[b][i]);
-                            // constraint 9
+
+                            /// Constraint 3.11 WP5-D1
                             model.add(sameStop <= modelVariables.charge[d][j]);
-                            // constraint 10
+
+                            /// Constraint 3.12 WP5-D1
                             model.add(modelVariables.charge[b][i] + modelVariables.charge[d][j] <= sameStop + 1);
                             IloIntVar const11(env, 0, 1, (varName + "jbeforei").c_str());
                             IloIntVar const12(env, 0, 1, (varName + "ibeforej").c_str());
-                            // constraint 11
+
+                            /// Constraint 3.13 WP5-D1
                             model.add(modelVariables.actualArrival[b][i] >=
                                               modelVariables.actualArrival[d][j] + modelVariables.chargeTime[d][j] - bigM * const11);
-                            // constraint 12
+
+                            /// Constraint 3.14 WP5-D1
                             model.add(modelVariables.actualArrival[d][j] >=
                                               modelVariables.actualArrival[b][i] + modelVariables.chargeTime[b][i] - bigM * const12);
-                            // constraint 13
+
+                            /// Constraint 3.15 WP5-D1
                             model.add(const11 + const12 - (1 - sameStop) <= 1);
                         }
                     }
                 }
             }
         }
+
+        /// a simplification. A bus needs as much energy as is needed to reach the end of their route minus the min battery capacity and starting capacity
         model.add(IloSum(modelVariables.chargeAmount[b]) >= minEnergyNeeded + minBatteryCapacity - startingCapacity);
         if(minEnergyNeeded + minBatteryCapacity - startingCapacity <= 0){
             model.add(IloSum(modelVariables.chargeAmount[b])<=0.0);
         }
+
         cout << "Bus: " << b << "\tTravel energy:" << minEnergyNeeded <<"\tMinBatCap: " << minBatteryCapacity
         <<"\tStarting cap:" << startingCapacity << "\tmin energy needed:" << minEnergyNeeded +
         minBatteryCapacity - startingCapacity <<endl;
@@ -424,9 +520,12 @@ IloModel addConstraints(IloModel model, IloEnv env, ModelParameters parameters, 
         for(int busIndex = 0; busIndex<modelVariables.buses.getSize();busIndex++){
             int b = modelVariables.buses[busIndex];
             IloNumVar busTotal = IloNumVar(env, ("window"+to_string(k) + "bus"+to_string(b)).c_str());
+
+
             model.add(busTotal >= IloSum(modelVariables.windowEnergyUsed[k][b]));
             windowTotals.add(busTotal);
         }
+        /// Constraint 3.27 WP5-D1
         model.add(modelVariables.powerExcess[k][2]>=IloSum(windowTotals));
 
     }
@@ -434,42 +533,55 @@ IloModel addConstraints(IloModel model, IloEnv env, ModelParameters parameters, 
     return model;
 }
 
+/// load information from a number of files
 ModelParameters parseData(map<string, string> arguments, primitiveVariables& loadedVars){
     Parser parser;
     ModelParameters parameters;
 
-
+    /// load the value of X_i
     if(!arguments["chargingStationsFile"].empty()){
         parameters.chargingStops = parser.parseChargingStationsFile(arguments["chargingStationsFile"]);
     }
 
-    if(arguments.find("timeWindows") != arguments.end()){
+    /// parse the command line argument for information about CEW
+    if(arguments.find("CEW") != arguments.end()){
         string commaDelimiter = ",";
 
-        while(arguments["timeWindows"].find(commaDelimiter) != string::npos){
+        while(arguments["CEW"].find(commaDelimiter) != string::npos){
+            /// the start time and end time of a CEW are seperated by "-", the amount of excess clean energy is
+            /// preceded by "=", and each CEW is terminated with a ","
             string timeDelimiter = "-";
             string amountDelimiter = "=";
-            string window = arguments["timeWindows"].substr(0,arguments["timeWindows"].find(commaDelimiter));
+            string window = arguments["CEW"].substr(0,arguments["CEW"].find(commaDelimiter));
 
             double windowStartTime = stod(window.substr(0, window.find(timeDelimiter)));
             double windowEndTime = stod(window.substr(window.find(timeDelimiter)+1));
             double windowEnergyAmount = stod(window.substr(window.find(amountDelimiter)+1));
+            /// if there is no excess clean energy available for the current CEW then it is removed.
             if(windowEnergyAmount == 0 ){
                 cout << "no energy " << windowStartTime << " " << windowEndTime << " " << windowEnergyAmount << endl;
-                arguments["timeWindows"].erase(0, arguments["timeWindows"].find(commaDelimiter) + commaDelimiter.length());
+                arguments["CEW"].erase(0, arguments["CEW"].find(commaDelimiter) + commaDelimiter.length());
                 continue;
             }
             CleanEnergyWindow currentWindow{.startTime=windowStartTime, .endTime=windowEndTime,
                                             .availableEnergy=windowEnergyAmount * stod(arguments["powerRatio"])};
             parameters.cleanEnergyWindows.push_back(currentWindow);
-            arguments["timeWindows"].erase(0, arguments["timeWindows"].find(commaDelimiter) + commaDelimiter.length());
+            arguments["CEW"].erase(0, arguments["CEW"].find(commaDelimiter) + commaDelimiter.length());
         }
     }
+
+    /// load station name
     parameters.stationData = parser.parseStopsFile(arguments["stationDataFile"]);
     parameters.numberStations = parameters.stationData.size();
 
-    parameters.distances = parser.parseDistanceFile(arguments["stationDistanceFile"], parameters.numberStations);
+    /// load the distance between each station (D_ij)
+    parameters.distances = parser.parseDistanceFile(arguments["stationDistanceFile"],
+                                                    parameters.numberStations);
+
+    /// load bus route information (i.e., number of buses, their route etc)
     parameters = parser.parseBusData(arguments["busDataFile"], parameters);
+
+    /// loads the values of previous solution when recalculating a schedule.
     if(arguments.find("recalculate") != arguments.end() && arguments["recalculate"] == "true"){
         loadedVars = parser.parseSolutionFile(arguments["solutionDataFile"]);
     }
@@ -477,7 +589,7 @@ ModelParameters parseData(map<string, string> arguments, primitiveVariables& loa
 }
 
 
-
+/// converts the CPLEX variables into primitives (i.e., int, float, bool etc) for printing.
 primitiveVariables cplexToPrimitive(IloCplex cplex, IloEnv env, string method){
     primitiveVariables outputVars;
     for(int bIndex = 0; bIndex<modelVariables.buses.getSize();bIndex++){
@@ -512,6 +624,7 @@ primitiveVariables cplexToPrimitive(IloCplex cplex, IloEnv env, string method){
             outputVars.charge[b].push_back(stoi(to_string(valuesCharge[i])));
             outputVars.nonRenewable[b].push_back(valuesNonClean[i]);
             outputVars.chargeAmount[b].push_back(valuesChargeAmount[i]);
+            /// ase and r_bi are only assigned values if SPM is used.
             if(method == "SPM"){
                 outputVars.ases[b].push_back(cplex.getValue(modelVariables.ases[b][i]));
                 outputVars.discounts[b].push_back(cplex.getValue(modelVariables.discounts[b][i]));
@@ -566,6 +679,7 @@ primitiveVariables cplexToPrimitive(IloCplex cplex, IloEnv env, string method){
 
 }
 
+/// sets the values of variables which occur before the current checkpoint denoted by startTime.
 IloModel setPreviousValues(IloModel model, IloEnv env, primitiveVariables loadedVars, double startTime){
     for (int busIndex = 0; busIndex < loadedVars.buses.size(); busIndex++) {
         int b = loadedVars.buses[busIndex];
@@ -598,17 +712,24 @@ void createMIPModel( primitiveVariables loadedVars, ModelParameters parameters, 
     try {
         IloModel model(env);
 
+        /// create the variables used in the CPLEX/MIP model
         createVariables(env, parameters, arguments);
-        // cost function
-        IloNumExprArg renewableSum = IloSum(modelVariables.nonRenewable[parameters.busKeys[0]]);
 
+        /// Set up the calculations for minimizing the total amount of non-clean energy consumed.
+        IloNumExprArg nonCleanSum = IloSum(modelVariables.nonRenewable[parameters.busKeys[0]]);
         for (int bIndex=1; bIndex<parameters.busKeys.size();bIndex++) {
             int b = parameters.busKeys[bIndex];
-            renewableSum = renewableSum + IloSum(modelVariables.nonRenewable[b]);
+            nonCleanSum = nonCleanSum + IloSum(modelVariables.nonRenewable[b]);
         }
-        model.add(IloMinimize(env, renewableSum));
 
+        /// objective function
+        model.add(IloMinimize(env, nonCleanSum));
+
+        /// create the constraints used in the MIP model
         model = addConstraints(model, env, parameters, arguments);
+
+        /// if we want to recalculate the schedule for the current day then we must assign the values of variables which
+        /// occur before the current checkpoint start
         if(arguments["recalculate"] == "true"){
             model = setPreviousValues(model, env, loadedVars, stod(arguments["horizonStartTime"]));
         }
@@ -618,41 +739,55 @@ void createMIPModel( primitiveVariables loadedVars, ModelParameters parameters, 
         cout << "Solving..." << endl;
         IloCplex cplex(model);
 
+        /// use a warming solution if one is available.
         ifstream f(arguments["warmingSolutionFile"].c_str());
         if(f.good()){
             cout << "Previous solution file found. Using solution warming" << endl;
-//	    cplex.readStartInfo(arguments["warmingSolutionFile"].c_str());
 	    cplex.readSolution(arguments["warmingSolutionFile"].c_str());
         }
         else{
             cout << "No previous solution file found" << endl;
         }
         f.close();
+
+        /// set some parameters for CPLEX.
         cplex.setParam(IloCplex::Param::MIP::Display, 3);
         cplex.setParam(IloCplex::Param::MIP::Tolerances::Integrality, 0.0);
-//        cplex.setParam(IloCplex::Param::Simplex::Tolerances::Feasibility, 1e-07);
         cout << "Number of constraints: " << cplex.getNrows() << endl;
+
+        /// export the created MIP model for debugging purposes, this should be deleted if not used as it might take up a large amount of space.
         cplex.exportModel("model.lp");
+
+        /// set some conditions for ending search early
         if(stoi(arguments["maxSolutions"]) > 0){
             cplex.setParam(IloCplex::Param::MIP::Limits::Solutions, stoi(arguments["maxSolutions"]));
         }
         if(stoi(arguments["timeout"]) > 0){
             cplex.setParam(IloCplex::Param::TimeLimit, stoi(arguments["timeout"]));
         }
+
+        /// save the infromation about the search process into a logFile
         ofstream myFile;
         if(arguments.find("logFile") != arguments.end()){
             myFile.open(arguments["logFile"]);
             cplex.setOut(myFile);
         }
-        if (!cplex.solve()) {
 
+        /// begin the search process
+        if (!cplex.solve()) {
             cout << cplex.getCplexStatus() << endl;
             env.error() << "ERROR FAILED TO SOLVE" << endl;
         } else {
             time_t solverEndTime = time(0);
             long elapsedTime = solverEndTime - solverStartTime;
+
+            /// convert the values of the CPLEX variables for the best solution into basic data-types (i.e., int, float)
             primitiveVariables outputVariables = cplexToPrimitive(cplex, env, arguments["method"]);
+
+            /// write the solution into a LP file. This LP file can then be loaded to be used as a warming solution laer.
             cplex.writeSolution(arguments["LPFile"].c_str());
+
+            /// print the results of the experiment
             Output printer;
             printer.printResults(outputVariables, parameters.stationData,
                                  elapsedTime, stod(arguments["horizonStartTime"]), stod(arguments["horizonEndTime"]),
@@ -678,15 +813,18 @@ void createMIPModel( primitiveVariables loadedVars, ModelParameters parameters, 
 int main(int argc, char *argv[]) {
 
     Parser myParse;
+    /// read the command line arguments and print them
     map<string, string> arguments = myParse.parseArguments(argc, argv);
     for(auto & keyVal: arguments){
         cout << keyVal.first << ":" << keyVal.second<<endl;
     }
 
+    /// load the data-set
     primitiveVariables loadedVars;
     ModelParameters parameters = parseData(arguments, loadedVars);
-    createMIPModel(loadedVars, parameters, arguments);
 
+    /// generate the CPLEX model, add constraints, and execute search.
+    createMIPModel(loadedVars, parameters, arguments);
 
     return 0;
 

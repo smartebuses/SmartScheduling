@@ -1,7 +1,3 @@
-//
-// Created by padraigh on 02/03/2022.
-//
-
 #include "Utils.h"
 #include <string.h>
 

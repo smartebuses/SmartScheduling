@@ -1,7 +1,3 @@
-//
-// Created by Padraigh on 05/01/2021.
-//
-
 #ifndef SCHEDULER_READ_FILES_H
 #define SCHEDULER_READ_FILES_H
 #include "string"

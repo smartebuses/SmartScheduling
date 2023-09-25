@@ -3,7 +3,6 @@ project(scheduler)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ldl")
 
-#set(BOOST_VERSION Boost-1.79.0)
 set(BOOST_VERSION Boost-1.78.0)
 set(CMAKE_INCLUDE_PATH ${CMAKE_INCLUDE_PATH} "$HOME/boost/include")
 set(CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH} "$HOME/boost/lib")
